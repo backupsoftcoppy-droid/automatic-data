@@ -130,9 +130,14 @@ def process_excel_data(uploaded_file):
     df_data = df_data[df_data['To_Number'].notna()].copy()
     df_data['Tanggal'] = pd.to_datetime(df_data['Tanggal'], errors='coerce').dt.strftime('%Y-%m-%d')
 
-    df_sorted = df_data.iloc[::-1].groupby('Sc_Destination', sort=False, group_keys=False).apply(lambda x: x).reset_index(drop=True)
+    # --- PERBAIKAN DI BARIS INI ---
+    # Menggunakan sort_values alih-alih groupby().apply() agar urutan terbalik & pengelompokan tetap aman tanpa menghilangkan kolom
+    df_reversed = df_data.iloc[::-1].copy()
+    df_sorted = df_reversed.sort_values(by='Sc_Destination', kind='stable', ascending=True).reset_index(drop=True)
+    
     df_sorted['to_index'] = df_sorted.groupby('Sc_Destination').cumcount()
     df_sorted['bag_num'] = (df_sorted['to_index'] // 15) + 1
+    # -------------------------------
 
     # 1. SHEET 'SJM'
     ws_sjm = wb.active
@@ -376,13 +381,11 @@ def process_excel_data(uploaded_file):
         max_len = max(len(str(cell.value or '')) for cell in col)
         ws_sheet3.column_dimensions[col_letter].width = max(max_len + 12, 28)
 
-    # Simpan workbook ke memori
     output_stream = io.BytesIO()
     wb.save(output_stream)
     output_stream.seek(0)
     
     return output_stream
-
 # ==========================================
 # 4. ANTARMUKA UTAMA (MAIN APP UI)
 # ==========================================
