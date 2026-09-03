@@ -18,7 +18,7 @@ def check_password():
     """Mengembalikan True jika kata sandi benar."""
     def password_entered():
         # Memeriksa password dari Streamlit Secrets atau default 'admin123'
-        target_password = st.secrets.get("APP_PASSWORD", "admin123")
+        target_password = st.secrets.get("APP_PASSWORD", "deon22")
         if st.session_state["password"] == target_password:
             st.session_state["password_correct"] = True
             del st.session_state["password"]  # Hapus password dari session state
