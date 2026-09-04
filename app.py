@@ -408,7 +408,7 @@ if uploaded_file is not None:
                 processed_excel = process_excel_data(uploaded_file)
                 output_filename = f"FIXED_SCRIPT_{uploaded_file.name}"
                 
-                st.balloons()
+                
                 st.success("Pemrosesan Selesai! Klik tombol di bawah untuk mengunduh hasil.")
                 
                 st.download_button(
