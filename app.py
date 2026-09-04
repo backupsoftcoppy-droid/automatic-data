@@ -111,12 +111,26 @@ def process_excel_data(uploaded_file):
     df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
     wb = openpyxl.Workbook()
 
+    # Cek kecukupan baris
+    if len(df_raw) < 4:
+        raise ValueError("File Excel tidak memiliki cukup baris data (minimal 4 baris).")
+
     df_data = df_raw.iloc[3:, :8].copy()
     df_data.columns = ['Tanggal', 'Vendor', 'Sc_Origin', 'Sc_Destination', 'Lt_Number', 'To_Number', 'Gross_Weight', 'Total']
 
+    # Filter data valid
     df_data = df_data[df_data['To_Number'].notna()].copy()
+    if df_data.empty:
+        raise ValueError("Tidak ditemukan data transaksi yang memiliki 'To_Number' (Kolom F) di baris 4 ke bawah.")
+
+    # Format Tanggal Transaksi
     df_data['Tanggal'] = pd.to_datetime(df_data['Tanggal'], errors='coerce').dt.strftime('%Y-%m-%d')
 
+    # Format Gross Weight aman (ubah koma ke titik bila berupa string)
+    df_data['Gross_Weight'] = df_data['Gross_Weight'].astype(str).str.replace(',', '.')
+    df_data['Gross_Weight'] = pd.to_numeric(df_data['Gross_Weight'], errors='coerce').fillna(0.0)
+
+    # Sorting
     df_reversed = df_data.iloc[::-1].copy()
     df_sorted = df_reversed.sort_values(by='Sc_Destination', kind='stable', ascending=True).reset_index(drop=True)
     
@@ -127,19 +141,19 @@ def process_excel_data(uploaded_file):
     ws_sjm = wb.active
     ws_sjm.title = "SJM"
 
-    title_text = str(df_raw.iloc[0, 0]) if pd.notnull(df_raw.iloc[0, 0]) else "SURAT JALAN MANUAL"
+    title_text = str(df_raw.iloc[0, 0]) if (not pd.isna(df_raw.iloc[0, 0])) else "SURAT JALAN MANUAL"
 
-    sub_title_raw = df_raw.iloc[1, 0]
-    if pd.notnull(sub_title_raw):
-        parsed_date = pd.to_datetime(sub_title_raw, errors='ignore')
-        if isinstance(parsed_date, pd.Timestamp):
+    # Perbaikan Sub-Title Tanggal Aman (Safe Parsing)
+    sub_title_raw = df_raw.iloc[1, 0] if len(df_raw) > 1 else ""
+    sub_title_text = ""
+    if pd.notna(sub_title_raw):
+        parsed_date = pd.to_datetime(sub_title_raw, errors='coerce')
+        if pd.notnull(parsed_date):
             sub_title_text = parsed_date.strftime('%d %B %Y').upper() + " TRIP 1"
         else:
             sub_title_text = str(sub_title_raw)
-    else:
-        sub_title_text = ""
 
-    code_box = str(df_raw.iloc[0, 7]) if (df_raw.shape[1] >= 8 and pd.notnull(df_raw.iloc[0, 7])) else ""
+    code_box = str(df_raw.iloc[0, 7]) if (df_raw.shape[1] >= 8 and pd.notna(df_raw.iloc[0, 7])) else ""
 
     ws_sjm.append([title_text, "", "", "", "", "", "", code_box])
     ws_sjm.append([sub_title_text, "", "", "", "", "", "", ""])
@@ -186,7 +200,7 @@ def process_excel_data(uploaded_file):
                 cell.number_format = '#,##0.00'
 
     tot_sjm_row = ws_sjm.max_row + 1
-    total_sjm_gw = round(pd.to_numeric(df_sorted['Gross_Weight'], errors='coerce').sum(), 2)
+    total_sjm_gw = round(df_sorted['Gross_Weight'].sum(), 2)
     ws_sjm.append(["TOTAL", "", "", "", "", "", total_sjm_gw, ""])
     ws_sjm.merge_cells(start_row=tot_sjm_row, start_column=1, end_row=tot_sjm_row, end_column=6)
 
@@ -263,7 +277,6 @@ def process_excel_data(uploaded_file):
     df_m["Clear Gw"] = pd.to_numeric(df_m["Clear Gw"], errors='coerce').fillna(0)
     df_m["Gross Weight"] = pd.to_numeric(df_m["Gross Weight"], errors='coerce').fillna(0)
 
-    # Catat baris terakhir data MARKING sebelum ditambahi Grand Total
     max_marking_data_row = ws_marking.max_row
 
     tot_gw = round(df_m["Clear Gw"].sum(), 2)
@@ -297,7 +310,6 @@ def process_excel_data(uploaded_file):
 
     pvt_first_rows = df_m.drop_duplicates(subset=["External Number"], keep="first")
 
-    # Menggunakan max_marking_data_row yang sudah tepat
     for pvt_row_idx, item in enumerate(pvt_first_rows.itertuples(), start=4):
         m_row = item.marking_row_idx
         formula_pvt_ext = f"=MARKING!J{m_row}"
@@ -373,7 +385,6 @@ def process_excel_data(uploaded_file):
     output_stream.seek(0)
     
     return output_stream
-
 # ==========================================
 # 4. ANTARMUKA UTAMA (MAIN APP UI)
 # ==========================================
