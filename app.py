@@ -17,16 +17,14 @@ st.set_page_config(
 def check_password():
     """Mengembalikan True jika kata sandi benar."""
     def password_entered():
-        # Memeriksa password dari Streamlit Secrets atau default 'admin123'
         target_password = st.secrets.get("APP_PASSWORD", "deon22")
         if st.session_state["password"] == target_password:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Hapus password dari session state
+            del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
-        # Tampilan Pertama (Form Login)
+    if "password_correct" not in st.session_state or not st.session_state["password_correct"]:
         st.title("🔒 Area Terbatas")
         st.text_input(
             "Masukkan Kata Sandi Aplikasi:", 
@@ -34,24 +32,13 @@ def check_password():
             on_change=password_entered, 
             key="password"
         )
+        if st.session_state.get("password_correct") == False:
+            st.error("😕 Kata sandi salah. Silakan coba lagi.")
         return False
-    elif not st.session_state["password_correct"]:
-        # Tampilan Jika Password Salah
-        st.title("🔒 Area Terbatas")
-        st.text_input(
-            "Masukkan Kata Sandi Aplikasi:", 
-            type="password", 
-            on_change=password_entered, 
-            key="password"
-        )
-        st.error("😕 Kata sandi salah. Silakan coba lagi.")
-        return False
-    else:
-        # Kata sandi benar
-        return True
+    return True
 
 if not check_password():
-    st.stop()  # Hentikan eksekusi kode di bawah jika belum login
+    st.stop()
 
 # ==========================================
 # 2. MASTER MAP & STYLING EXCEL
@@ -130,14 +117,11 @@ def process_excel_data(uploaded_file):
     df_data = df_data[df_data['To_Number'].notna()].copy()
     df_data['Tanggal'] = pd.to_datetime(df_data['Tanggal'], errors='coerce').dt.strftime('%Y-%m-%d')
 
-    # --- PERBAIKAN DI BARIS INI ---
-    # Menggunakan sort_values alih-alih groupby().apply() agar urutan terbalik & pengelompokan tetap aman tanpa menghilangkan kolom
     df_reversed = df_data.iloc[::-1].copy()
     df_sorted = df_reversed.sort_values(by='Sc_Destination', kind='stable', ascending=True).reset_index(drop=True)
     
     df_sorted['to_index'] = df_sorted.groupby('Sc_Destination').cumcount()
     df_sorted['bag_num'] = (df_sorted['to_index'] // 15) + 1
-    # -------------------------------
 
     # 1. SHEET 'SJM'
     ws_sjm = wb.active
@@ -279,6 +263,9 @@ def process_excel_data(uploaded_file):
     df_m["Clear Gw"] = pd.to_numeric(df_m["Clear Gw"], errors='coerce').fillna(0)
     df_m["Gross Weight"] = pd.to_numeric(df_m["Gross Weight"], errors='coerce').fillna(0)
 
+    # Catat baris terakhir data MARKING sebelum ditambahi Grand Total
+    max_marking_data_row = ws_marking.max_row
+
     tot_gw = round(df_m["Clear Gw"].sum(), 2)
     tot_row_idx = ws_marking.max_row + 1
     ws_marking.append(["GRAND TOTAL", "", "", "", "", "", "", tot_gw, "", "", tot_gw])
@@ -309,13 +296,13 @@ def process_excel_data(uploaded_file):
         c.border = BORDER_THIN
 
     pvt_first_rows = df_m.drop_duplicates(subset=["External Number"], keep="first")
-    max_marking_row = ws_marking.max_row - 1
 
+    # Menggunakan max_marking_data_row yang sudah tepat
     for pvt_row_idx, item in enumerate(pvt_first_rows.itertuples(), start=4):
         m_row = item.marking_row_idx
         formula_pvt_ext = f"=MARKING!J{m_row}"
-        formula_count = f"=COUNTIF(MARKING!J$4:J${max_marking_row}, A{pvt_row_idx})"
-        formula_sum = f"=SUMIF(MARKING!J$4:J${max_marking_row}, A{pvt_row_idx}, MARKING!K$4:K${max_marking_row})"
+        formula_count = f"=COUNTIF(MARKING!J$4:J${max_marking_data_row}, A{pvt_row_idx})"
+        formula_sum = f"=SUMIF(MARKING!J$4:J${max_marking_data_row}, A{pvt_row_idx}, MARKING!K$4:K${max_marking_data_row})"
 
         ws_pvt.append([formula_pvt_ext, formula_count, formula_sum])
 
@@ -386,13 +373,13 @@ def process_excel_data(uploaded_file):
     output_stream.seek(0)
     
     return output_stream
+
 # ==========================================
 # 4. ANTARMUKA UTAMA (MAIN APP UI)
 # ==========================================
 st.title("📦 SPX Data Formatting & Marking Generator")
 st.markdown("Unggah file Excel raw data Anda di bawah ini untuk menghasilkan file Excel dengan sheet **SJM**, **MARKING**, **PVT**, dan **Sheet3**.")
 
-# Logout Button di Sidebar
 with st.sidebar:
     st.write("🔓 **Sesi Login Aktif**")
     if st.button("Keluar (Logout)"):
