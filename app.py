@@ -409,7 +409,7 @@ if uploaded_file is not None:
                 output_filename = f"FIXED_SCRIPT_{uploaded_file.name}"
                 
                 st.balloons()
-                st.success("🎉 Pemrosesan Selesai! Klik tombol di bawah untuk mengunduh hasil.")
+                st.success("Pemrosesan Selesai! Klik tombol di bawah untuk mengunduh hasil.")
                 
                 st.download_button(
                     label="📥 Unduh File Excel Hasil Processing",
