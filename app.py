@@ -388,7 +388,7 @@ def process_excel_data(uploaded_file):
 # ==========================================
 # 4. ANTARMUKA UTAMA (MAIN APP UI)
 # ==========================================
-st.title("📦 SPX Data Formatting & Marking Generator")
+st.title("📦 Lion parcel Data Formatting & Marking Generator")
 st.markdown("Unggah file Excel raw data Anda di bawah ini untuk menghasilkan file Excel dengan sheet **SJM**, **MARKING**, **PVT**, dan **Sheet3**.")
 
 with st.sidebar:
