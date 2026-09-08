@@ -66,6 +66,18 @@ def get_prefix_code(destination_name):
     dest_str = str(destination_name).strip()
     return MARKING_MAP.get(dest_str, dest_str.split()[0][:3].upper())
 
+def clean_remake_status(val):
+    """Sistem normalisasi status REMAKE / Remarks"""
+    if pd.isna(val):
+        return "BAG"
+    val_str = str(val).strip().upper()
+    if val_str in ["BARHAL", "BARHAL."]:
+        return "BARHAL"
+    elif val_str in ["DG ITEM", "DG", "DGITEM"]:
+        return "DG ITEM"
+    else:
+        return "BAG"
+
 RED_FILL = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
 YELLOW_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 GRAY_HEADER_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
@@ -111,26 +123,23 @@ def process_excel_data(uploaded_file):
     df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
     wb = openpyxl.Workbook()
 
-    # Cek kecukupan baris
     if len(df_raw) < 4:
         raise ValueError("File Excel tidak memiliki cukup baris data (minimal 4 baris).")
 
-    df_data = df_raw.iloc[3:, :8].copy()
-    df_data.columns = ['Tanggal', 'Vendor', 'Sc_Origin', 'Sc_Destination', 'Lt_Number', 'To_Number', 'Gross_Weight', 'Total']
+    df_data = df_raw.iloc[3:, :9].copy()
+    df_data.columns = ['Tanggal', 'Vendor', 'Sc_Origin', 'Sc_Destination', 'Lt_Number', 'To_Number', 'Gross_Weight', 'Remake', 'Total']
 
-    # Filter data valid
     df_data = df_data[df_data['To_Number'].notna()].copy()
     if df_data.empty:
         raise ValueError("Tidak ditemukan data transaksi yang memiliki 'To_Number' (Kolom F) di baris 4 ke bawah.")
 
-    # Format Tanggal Transaksi
     df_data['Tanggal'] = pd.to_datetime(df_data['Tanggal'], errors='coerce').dt.strftime('%Y-%m-%d')
-
-    # Format Gross Weight aman (ubah koma ke titik bila berupa string)
     df_data['Gross_Weight'] = df_data['Gross_Weight'].astype(str).str.replace(',', '.')
     df_data['Gross_Weight'] = pd.to_numeric(df_data['Gross_Weight'], errors='coerce').fillna(0.0)
+    
+    # Pengolahan Nilai REMAKE
+    df_data['Remake'] = df_data['Remake'].apply(clean_remake_status)
 
-    # Sorting
     df_reversed = df_data.iloc[::-1].copy()
     df_sorted = df_reversed.sort_values(by='Sc_Destination', kind='stable', ascending=True).reset_index(drop=True)
     
@@ -143,7 +152,6 @@ def process_excel_data(uploaded_file):
 
     title_text = str(df_raw.iloc[0, 0]) if (not pd.isna(df_raw.iloc[0, 0])) else "SURAT JALAN MANUAL"
 
-    # Perbaikan Sub-Title Tanggal Aman (Safe Parsing)
     sub_title_raw = df_raw.iloc[1, 0] if len(df_raw) > 1 else ""
     sub_title_text = ""
     if pd.notna(sub_title_raw):
@@ -153,35 +161,35 @@ def process_excel_data(uploaded_file):
         else:
             sub_title_text = str(sub_title_raw)
 
-    code_box = str(df_raw.iloc[0, 7]) if (df_raw.shape[1] >= 8 and pd.notna(df_raw.iloc[0, 7])) else ""
+    code_box = str(df_raw.iloc[0, 8]) if (df_raw.shape[1] >= 9 and pd.notna(df_raw.iloc[0, 8])) else ""
 
-    ws_sjm.append([title_text, "", "", "", "", "", "", code_box])
-    ws_sjm.append([sub_title_text, "", "", "", "", "", "", ""])
+    ws_sjm.append([title_text, "", "", "", "", "", "", "", code_box])
+    ws_sjm.append([sub_title_text, "", "", "", "", "", "", "", ""])
 
-    ws_sjm.merge_cells("A1:G1")
-    ws_sjm.merge_cells("A2:G2")
+    ws_sjm.merge_cells("A1:H1")
+    ws_sjm.merge_cells("A2:H2")
 
     for r in [1, 2]:
-        for c in range(1, 8):
+        for c in range(1, 9):
             cell = ws_sjm.cell(row=r, column=c)
             cell.fill = BLUE_SJM_FILL
             cell.font = FONT_HEADER
             cell.alignment = ALIGN_FULL_CENTER
             cell.border = BORDER_THIN
 
-    ws_sjm.cell(1, 8).fill = BLUE_SJM_FILL
-    ws_sjm.cell(1, 8).font = FONT_HEADER
-    ws_sjm.cell(1, 8).alignment = ALIGN_FULL_CENTER
-    ws_sjm.cell(1, 8).border = BORDER_THIN
+    ws_sjm.cell(1, 9).fill = BLUE_SJM_FILL
+    ws_sjm.cell(1, 9).font = FONT_HEADER
+    ws_sjm.cell(1, 9).alignment = ALIGN_FULL_CENTER
+    ws_sjm.cell(1, 9).border = BORDER_THIN
 
-    ws_sjm.cell(2, 8).value = len(df_sorted)
-    ws_sjm.cell(2, 8).font = FONT_BIG_TOTAL
-    ws_sjm.cell(2, 8).alignment = ALIGN_FULL_CENTER
-    ws_sjm.cell(2, 8).border = BORDER_THIN
+    ws_sjm.cell(2, 9).value = len(df_sorted)
+    ws_sjm.cell(2, 9).font = FONT_BIG_TOTAL
+    ws_sjm.cell(2, 9).alignment = ALIGN_FULL_CENTER
+    ws_sjm.cell(2, 9).border = BORDER_THIN
 
-    headers_sjm = ['TGL', 'Vendor', 'SC Orgin', 'DESTINATION', 'LT NUMBER', 'TO NUMBER', 'Gross Weight', 'TOTAL']
+    headers_sjm = ['TGL', 'Vendor', 'SC Orgin', 'DESTINATION', 'LT NUMBER', 'TO NUMBER', 'Gross Weight', 'REMAKE', 'TOTAL']
     ws_sjm.append(headers_sjm)
-    for c_idx in range(1, 9):
+    for c_idx in range(1, 10):
         cell = ws_sjm.cell(row=3, column=c_idx)
         cell.fill = GRAY_HEADER_FILL
         cell.font = FONT_HEADER
@@ -189,9 +197,9 @@ def process_excel_data(uploaded_file):
         cell.border = BORDER_THIN
 
     for row in df_sorted.itertuples():
-        ws_sjm.append([row.Tanggal, row.Vendor, row.Sc_Origin, row.Sc_Destination, row.Lt_Number, row.To_Number, row.Gross_Weight, ""])
+        ws_sjm.append([row.Tanggal, row.Vendor, row.Sc_Origin, row.Sc_Destination, row.Lt_Number, row.To_Number, row.Gross_Weight, row.Remake, ""])
 
-    for row in ws_sjm.iter_rows(min_row=4, max_row=ws_sjm.max_row, min_col=1, max_col=8):
+    for row in ws_sjm.iter_rows(min_row=4, max_row=ws_sjm.max_row, min_col=1, max_col=9):
         for cell in row:
             cell.border = BORDER_THIN
             cell.font = FONT_REGULAR_BLACK
@@ -201,10 +209,10 @@ def process_excel_data(uploaded_file):
 
     tot_sjm_row = ws_sjm.max_row + 1
     total_sjm_gw = round(df_sorted['Gross_Weight'].sum(), 2)
-    ws_sjm.append(["TOTAL", "", "", "", "", "", total_sjm_gw, ""])
+    ws_sjm.append(["TOTAL", "", "", "", "", "", total_sjm_gw, "", ""])
     ws_sjm.merge_cells(start_row=tot_sjm_row, start_column=1, end_row=tot_sjm_row, end_column=6)
 
-    for c_idx in range(1, 9):
+    for c_idx in range(1, 10):
         cell = ws_sjm.cell(row=tot_sjm_row, column=c_idx)
         cell.fill = BLUE_SJM_FILL
         cell.font = FONT_HEADER
@@ -218,7 +226,7 @@ def process_excel_data(uploaded_file):
     # 2. SHEET 'MARKING'
     ws_marking = wb.create_sheet(title="MARKING")
 
-    ws_marking.append(["MARKING SPX OSO SUB DC CYCLE 1 HB"] + [""] * 10)
+    ws_marking.append(["MARKING SPX OSO SUB DC CYCLE "] + [""] * 10)
     ws_marking.merge_cells("A1:K1")
     ws_marking.row_dimensions[1].height = 28
 
@@ -257,7 +265,9 @@ def process_excel_data(uploaded_file):
 
         prefix = get_prefix_code(dest)
         marking = f"{prefix}-C1-{row.bag_num}"
-        remarks = "BAG"
+        
+        # Remarks disesuaikan dengan nilai Remake (BARHAL, DG ITEM, atau BAG)
+        remarks = row.Remake
 
         formula_ext_num = f'=G{idx}&"/"&E{idx}&"/"&I{idx}'
         ext_num_val_for_df = f"{marking}/{lt_num}/{remarks}"
@@ -385,10 +395,11 @@ def process_excel_data(uploaded_file):
     output_stream.seek(0)
     
     return output_stream
+
 # ==========================================
 # 4. ANTARMUKA UTAMA (MAIN APP UI)
 # ==========================================
-st.title("📦 Lion parcel Data Formatting & Marking Generator")
+st.title("📦 Lion Parcel Data Formatting & Marking Generator")
 st.markdown("Unggah file Excel raw data Anda di bawah ini untuk menghasilkan file Excel dengan sheet **SJM**, **MARKING**, **PVT**, dan **Sheet3**.")
 
 with st.sidebar:
@@ -408,7 +419,6 @@ if uploaded_file is not None:
                 processed_excel = process_excel_data(uploaded_file)
                 output_filename = f"FIXED_SCRIPT_{uploaded_file.name}"
                 
-                
                 st.success("Pemrosesan Selesai! Klik tombol di bawah untuk mengunduh hasil.")
                 
                 st.download_button(
@@ -419,3 +429,4 @@ if uploaded_file is not None:
                 )
             except Exception as e:
                 st.error(f"Terjadi kesalahan saat memproses data: {e}")
+                
