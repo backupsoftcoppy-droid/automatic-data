@@ -273,6 +273,176 @@ def process_excel_data(uploaded_file):
         ext_num_val_for_df = f"{marking}/{lt_num}/{remarks}"
 
         marking_rows.append([tgl, vendor, origin, dest, lt_num, to_num, marking, gw, remarks, ext_num_val_for_df, gw, idx])
+# ==========================================
+# 3. FUNGSI PEMROSESAN DATA (DIPERBAIKI)
+# ==========================================
+def process_excel_data(uploaded_file):
+    df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
+    wb = openpyxl.Workbook()
+
+    if len(df_raw) < 4:
+        raise ValueError("File Excel tidak memiliki cukup baris data (minimal 4 baris).")
+
+    # Ambil data mulai baris ke-4
+    df_data = df_raw.iloc[3:].copy()
+    
+    # Standarisasi kolom agar aman berapapun jumlah kolom dari file excel mentah
+    expected_cols = ['Tanggal', 'Vendor', 'Sc_Origin', 'Sc_Destination', 'Lt_Number', 'To_Number', 'Gross_Weight', 'Remake', 'Total']
+    
+    # Jika kolom lebih atau kurang, sesuaikan secara dinamis
+    if df_data.shape[1] >= len(expected_cols):
+        df_data = df_data.iloc[:, :len(expected_cols)]
+        df_data.columns = expected_cols
+    else:
+        # Jika kolom kurang dari 9, tambahkan kolom sisa dengan NaN
+        cols_present = list(df_data.columns[:df_data.shape[1]])
+        df_data = df_data.iloc[:, :len(cols_present)]
+        df_data.columns = expected_cols[:len(cols_present)]
+        for missing_col in expected_cols[len(cols_present):]:
+            df_data[missing_col] = None
+
+    df_data = df_data[df_data['To_Number'].notna()].copy()
+    if df_data.empty:
+        raise ValueError("Tidak ditemukan data transaksi yang memiliki 'To_Number' (Kolom F) di baris 4 ke bawah.")
+
+    df_data['Tanggal'] = pd.to_datetime(df_data['Tanggal'], errors='coerce').dt.strftime('%Y-%m-%d')
+    df_data['Gross_Weight'] = df_data['Gross_Weight'].astype(str).str.replace(',', '.')
+    df_data['Gross_Weight'] = pd.to_numeric(df_data['Gross_Weight'], errors='coerce').fillna(0.0)
+    
+    # Pengolahan Nilai REMAKE
+    df_data['Remake'] = df_data['Remake'].apply(clean_remake_status)
+
+    df_reversed = df_data.iloc[::-1].copy()
+    df_sorted = df_reversed.sort_values(by='Sc_Destination', kind='stable', ascending=True).reset_index(drop=True)
+    
+    df_sorted['to_index'] = df_sorted.groupby('Sc_Destination').cumcount()
+    df_sorted['bag_num'] = (df_sorted['to_index'] // 15) + 1
+
+    # 1. SHEET 'SJM'
+    ws_sjm = wb.active
+    ws_sjm.title = "SJM"
+
+    title_text = str(df_raw.iloc[0, 0]) if (not pd.isna(df_raw.iloc[0, 0])) else "SURAT JALAN MANUAL"
+
+    sub_title_raw = df_raw.iloc[1, 0] if len(df_raw) > 1 else ""
+    sub_title_text = ""
+    if pd.notna(sub_title_raw):
+        parsed_date = pd.to_datetime(sub_title_raw, errors='coerce')
+        if pd.notnull(parsed_date):
+            sub_title_text = parsed_date.strftime('%d %B %Y').upper() + " TRIP 1"
+        else:
+            sub_title_text = str(sub_title_raw)
+
+    code_box = str(df_raw.iloc[0, 8]) if (df_raw.shape[1] >= 9 and pd.notna(df_raw.iloc[0, 8])) else ""
+
+    ws_sjm.append([title_text, "", "", "", "", "", "", "", code_box])
+    ws_sjm.append([sub_title_text, "", "", "", "", "", "", "", ""])
+
+    ws_sjm.merge_cells("A1:H1")
+    ws_sjm.merge_cells("A2:H2")
+
+    for r in [1, 2]:
+        for c in range(1, 9):
+            cell = ws_sjm.cell(row=r, column=c)
+            cell.fill = BLUE_SJM_FILL
+            cell.font = FONT_HEADER
+            cell.alignment = ALIGN_FULL_CENTER
+            cell.border = BORDER_THIN
+
+    ws_sjm.cell(1, 9).fill = BLUE_SJM_FILL
+    ws_sjm.cell(1, 9).font = FONT_HEADER
+    ws_sjm.cell(1, 9).alignment = ALIGN_FULL_CENTER
+    ws_sjm.cell(1, 9).border = BORDER_THIN
+
+    ws_sjm.cell(2, 9).value = len(df_sorted)
+    ws_sjm.cell(2, 9).font = FONT_BIG_TOTAL
+    ws_sjm.cell(2, 9).alignment = ALIGN_FULL_CENTER
+    ws_sjm.cell(2, 9).border = BORDER_THIN
+
+    headers_sjm = ['TGL', 'Vendor', 'SC Orgin', 'DESTINATION', 'LT NUMBER', 'TO NUMBER', 'Gross Weight', 'REMAKE', 'TOTAL']
+    ws_sjm.append(headers_sjm)
+    for c_idx in range(1, 10):
+        cell = ws_sjm.cell(row=3, column=c_idx)
+        cell.fill = GRAY_HEADER_FILL
+        cell.font = FONT_HEADER
+        cell.alignment = ALIGN_FULL_CENTER
+        cell.border = BORDER_THIN
+
+    for row in df_sorted.itertuples():
+        ws_sjm.append([row.Tanggal, row.Vendor, row.Sc_Origin, row.Sc_Destination, row.Lt_Number, row.To_Number, row.Gross_Weight, row.Remake, ""])
+
+    for row in ws_sjm.iter_rows(min_row=4, max_row=ws_sjm.max_row, min_col=1, max_col=9):
+        for cell in row:
+            cell.border = BORDER_THIN
+            cell.font = FONT_REGULAR_BLACK
+            cell.alignment = ALIGN_FULL_CENTER
+            if isinstance(cell.value, (float, int)):
+                cell.number_format = '#,##0.00'
+
+    tot_sjm_row = ws_sjm.max_row + 1
+    total_sjm_gw = round(df_sorted['Gross_Weight'].sum(), 2)
+    ws_sjm.append(["TOTAL", "", "", "", "", "", total_sjm_gw, "", ""])
+    ws_sjm.merge_cells(start_row=tot_sjm_row, start_column=1, end_row=tot_sjm_row, end_column=6)
+
+    for c_idx in range(1, 10):
+        cell = ws_sjm.cell(row=tot_sjm_row, column=c_idx)
+        cell.fill = BLUE_SJM_FILL
+        cell.font = FONT_HEADER
+        cell.border = BORDER_THIN
+        cell.alignment = ALIGN_FULL_CENTER
+        if c_idx == 7:
+            cell.number_format = '#,##0.00'
+
+    autofit_table_columns(ws_sjm, start_row=3, min_width=16)
+
+    # 2. SHEET 'MARKING'
+    ws_marking = wb.create_sheet(title="MARKING")
+
+    ws_marking.append(["MARKING SPX OSO SUB DC CYCLE "] + [""] * 10)
+    ws_marking.merge_cells("A1:K1")
+    ws_marking.row_dimensions[1].height = 28
+
+    cell_a1 = ws_marking["A1"]
+    cell_a1.fill = RED_FILL
+    cell_a1.font = FONT_WHITE_TITLE_18
+    cell_a1.alignment = ALIGN_FULL_CENTER
+
+    ws_marking.append([sub_title_text] + [""] * 10)
+    ws_marking.merge_cells("A2:K2")
+    ws_marking.row_dimensions[2].height = 20
+
+    cell_a2 = ws_marking["A2"]
+    cell_a2.fill = YELLOW_FILL
+    cell_a2.font = FONT_SUB_BLACK
+    cell_a2.alignment = ALIGN_FULL_CENTER
+
+    headers_m = [
+        "Tanggal", "Vendor", "Sc Origin", "Sc Destination", "Lt Number",
+        "To Number", "Marking", "Gross Weight", "Remarks", "External Number", "Clear Gw"
+    ]
+    ws_marking.append(headers_m)
+    ws_marking.row_dimensions[3].height = 22
+
+    for col_idx in range(1, 12):
+        c = ws_marking.cell(row=3, column=col_idx)
+        c.fill = GRAY_HEADER_FILL
+        c.font = FONT_HEADER
+        c.alignment = ALIGN_FULL_CENTER
+        c.border = BORDER_THIN
+
+    marking_rows = []
+    for idx, row in enumerate(df_sorted.itertuples(), start=4):
+        tgl, vendor, origin, dest = row.Tanggal, "Lion Parcel", row.Sc_Origin, row.Sc_Destination
+        lt_num, to_num, gw = row.Lt_Number, row.To_Number, row.Gross_Weight
+
+        prefix = get_prefix_code(dest)
+        marking = f"{prefix}-C1-{row.bag_num}"
+        remarks = row.Remake
+
+        formula_ext_num = f'=G{idx}&"/"&E{idx}&"/"&I{idx}'
+        ext_num_val_for_df = f"{marking}/{lt_num}/{remarks}"
+
+        marking_rows.append([tgl, vendor, origin, dest, lt_num, to_num, marking, gw, remarks, ext_num_val_for_df, gw, idx])
         ws_marking.append([tgl, vendor, origin, dest, lt_num, to_num, marking, gw, remarks, formula_ext_num, gw])
 
     for row in ws_marking.iter_rows(min_row=4, max_row=ws_marking.max_row, min_col=1, max_col=11):
