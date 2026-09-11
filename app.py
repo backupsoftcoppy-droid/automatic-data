@@ -46,7 +46,7 @@ if not check_password():
 MARKING_MAP = {
     'Abepura DC': 'DJJ', 'Alak DC': 'KOE', 'Bacan Hub': 'LAH', 'Baguala DC': 'AMQ',
     'Balikpapan DC': 'BPN', 'Banjarmasin DC': 'BDJ1', 'Banjarmasin 2 DC': 'BDJ2',
-    'Banjarbaru DC': 'BJB', 'Batam DC': 'BTH', 'Dungingi DC': 'DGI',
+    'Banjarbaru DC': 'BJB', 'Batam DC': 'BTH', 'Dungingi DC': 'GTO',
     'Kalawat DC': 'MDU', 'Kota Waingapu Hub': 'WGP', 'Kota Waingapu 2 Hub': 'WGP2',
     'Kota Waingapu 4 Hub': 'WGP4', 'Labuhan Bajo DC': 'LBJ', 'Loli Hub': 'TMC2',
     'Loura (Laura) Hub': 'TMC', 'Manokwari Barat DC': 'MKW', 'Mantikulore DC': 'PLW',
